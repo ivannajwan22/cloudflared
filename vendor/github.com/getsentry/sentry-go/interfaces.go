@@ -3,18 +3,24 @@ package sentry
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
+	"reflect"
+	"slices"
 	"strings"
 	"time"
 )
 
-// Protocol Docs (kinda)
-// https://github.com/getsentry/rust-sentry-types/blob/master/src/protocol/v7.rs
+// eventType is the type of an error event.
+const eventType = "event"
 
 // transactionType is the type of a transaction event.
 const transactionType = "transaction"
+
+// checkInType is the type of a check in event.
+const checkInType = "check_in"
 
 // Level marks the severity of the event.
 type Level string
@@ -27,15 +33,6 @@ const (
 	LevelError   Level = "error"
 	LevelFatal   Level = "fatal"
 )
-
-func getSensitiveHeaders() map[string]bool {
-	return map[string]bool{
-		"Authorization":   true,
-		"Cookie":          true,
-		"X-Forwarded-For": true,
-		"X-Real-Ip":       true,
-	}
-}
 
 // SdkInfo contains all metadata about about the SDK being used.
 type SdkInfo struct {
@@ -99,6 +96,14 @@ func (b *Breadcrumb) MarshalJSON() ([]byte, error) {
 	return json.Marshal((*breadcrumb)(b))
 }
 
+// Attachment allows associating files with your events to aid in investigation.
+// An event may contain one or more attachments.
+type Attachment struct {
+	Filename    string
+	ContentType string
+	Payload     []byte
+}
+
 // User describes the user associated with an Event. If this is used, at least
 // an ID or an IP address should be provided.
 type User struct {
@@ -107,32 +112,27 @@ type User struct {
 	IPAddress string            `json:"ip_address,omitempty"`
 	Username  string            `json:"username,omitempty"`
 	Name      string            `json:"name,omitempty"`
-	Segment   string            `json:"segment,omitempty"`
 	Data      map[string]string `json:"data,omitempty"`
 }
 
 func (u User) IsEmpty() bool {
-	if len(u.ID) > 0 {
+	if u.ID != "" {
 		return false
 	}
 
-	if len(u.Email) > 0 {
+	if u.Email != "" {
 		return false
 	}
 
-	if len(u.IPAddress) > 0 {
+	if u.IPAddress != "" {
 		return false
 	}
 
-	if len(u.Username) > 0 {
+	if u.Username != "" {
 		return false
 	}
 
-	if len(u.Name) > 0 {
-		return false
-	}
-
-	if len(u.Segment) > 0 {
+	if u.Name != "" {
 		return false
 	}
 
@@ -154,6 +154,14 @@ type Request struct {
 	Env         map[string]string `json:"env,omitempty"`
 }
 
+var sensitiveHeaders = map[string]struct{}{
+	"Authorization":       {},
+	"Proxy-Authorization": {},
+	"Cookie":              {},
+	"X-Forwarded-For":     {},
+	"X-Real-Ip":           {},
+}
+
 // NewRequest returns a new Sentry Request from the given http.Request.
 //
 // NewRequest avoids operations that depend on network access. In particular, it
@@ -169,24 +177,22 @@ func NewRequest(r *http.Request) *Request {
 	var env map[string]string
 	headers := map[string]string{}
 
-	if client := CurrentHub().Client(); client != nil {
-		if client.Options().SendDefaultPII {
-			// We read only the first Cookie header because of the specification:
-			// https://tools.ietf.org/html/rfc6265#section-5.4
-			// When the user agent generates an HTTP request, the user agent MUST NOT
-			// attach more than one Cookie header field.
-			cookies = r.Header.Get("Cookie")
+	if client := CurrentHub().Client(); client != nil && client.options.SendDefaultPII {
+		// We read only the first Cookie header because of the specification:
+		// https://tools.ietf.org/html/rfc6265#section-5.4
+		// When the user agent generates an HTTP request, the user agent MUST NOT
+		// attach more than one Cookie header field.
+		cookies = r.Header.Get("Cookie")
 
-			for k, v := range r.Header {
-				headers[k] = strings.Join(v, ",")
-			}
+		headers = make(map[string]string, len(r.Header))
+		for k, v := range r.Header {
+			headers[k] = strings.Join(v, ",")
+		}
 
-			if addr, port, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-				env = map[string]string{"REMOTE_ADDR": addr, "REMOTE_PORT": port}
-			}
+		if addr, port, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+			env = map[string]string{"REMOTE_ADDR": addr, "REMOTE_PORT": port}
 		}
 	} else {
-		sensitiveHeaders := getSensitiveHeaders()
 		for k, v := range r.Header {
 			if _, ok := sensitiveHeaders[k]; !ok {
 				headers[k] = strings.Join(v, ",")
@@ -206,13 +212,33 @@ func NewRequest(r *http.Request) *Request {
 	}
 }
 
+// Mechanism is the mechanism by which an exception was generated and handled.
+type Mechanism struct {
+	Type             string         `json:"type,omitempty"`
+	Description      string         `json:"description,omitempty"`
+	HelpLink         string         `json:"help_link,omitempty"`
+	Source           string         `json:"source,omitempty"`
+	Handled          *bool          `json:"handled,omitempty"`
+	ParentID         *int           `json:"parent_id,omitempty"`
+	ExceptionID      int            `json:"exception_id"`
+	IsExceptionGroup bool           `json:"is_exception_group,omitempty"`
+	Data             map[string]any `json:"data,omitempty"`
+}
+
+// SetUnhandled indicates that the exception is an unhandled exception, i.e.
+// from a panic.
+func (m *Mechanism) SetUnhandled() {
+	m.Handled = Pointer(false)
+}
+
 // Exception specifies an error that occurred.
 type Exception struct {
 	Type       string      `json:"type,omitempty"`  // used as the main issue title
 	Value      string      `json:"value,omitempty"` // used as the main issue subtitle
 	Module     string      `json:"module,omitempty"`
-	ThreadID   string      `json:"thread_id,omitempty"`
+	ThreadID   uint64      `json:"thread_id,omitempty"`
 	Stacktrace *Stacktrace `json:"stacktrace,omitempty"`
+	Mechanism  *Mechanism  `json:"mechanism,omitempty"`
 }
 
 // SDKMetaData is a struct to stash data which is needed at some point in the SDK's event processing pipeline
@@ -224,6 +250,34 @@ type SDKMetaData struct {
 // Contains information about how the name of the transaction was determined.
 type TransactionInfo struct {
 	Source TransactionSource `json:"source,omitempty"`
+}
+
+// The DebugMeta interface is not used in Golang apps, but may be populated
+// when proxying Events from other platforms, like iOS, Android, and the
+// Web.  (See: https://develop.sentry.dev/sdk/event-payloads/debugmeta/ ).
+type DebugMeta struct {
+	SdkInfo *DebugMetaSdkInfo `json:"sdk_info,omitempty"`
+	Images  []DebugMetaImage  `json:"images,omitempty"`
+}
+
+type DebugMetaSdkInfo struct {
+	SdkName           string `json:"sdk_name,omitempty"`
+	VersionMajor      int    `json:"version_major,omitempty"`
+	VersionMinor      int    `json:"version_minor,omitempty"`
+	VersionPatchlevel int    `json:"version_patchlevel,omitempty"`
+}
+
+type DebugMetaImage struct {
+	Type        string `json:"type,omitempty"`         // all
+	ImageAddr   string `json:"image_addr,omitempty"`   // macho,elf,pe
+	ImageSize   int    `json:"image_size,omitempty"`   // macho,elf,pe
+	DebugID     string `json:"debug_id,omitempty"`     // macho,elf,pe,wasm,sourcemap
+	DebugFile   string `json:"debug_file,omitempty"`   // macho,elf,pe,wasm
+	CodeID      string `json:"code_id,omitempty"`      // macho,elf,pe,wasm
+	CodeFile    string `json:"code_file,omitempty"`    // macho,elf,pe,wasm,sourcemap
+	ImageVmaddr string `json:"image_vmaddr,omitempty"` // macho,elf,pe
+	Arch        string `json:"arch,omitempty"`         // macho,elf,pe
+	UUID        string `json:"uuid,omitempty"`         // proguard
 }
 
 // EventID is a hexadecimal string representing a unique uuid4 for an Event.
@@ -256,6 +310,8 @@ type Event struct {
 	Modules     map[string]string      `json:"modules,omitempty"`
 	Request     *Request               `json:"request,omitempty"`
 	Exception   []Exception            `json:"exception,omitempty"`
+	DebugMeta   *DebugMeta             `json:"debug_meta,omitempty"`
+	Attachments []*Attachment          `json:"-"`
 
 	// The fields below are only relevant for transactions.
 
@@ -264,9 +320,84 @@ type Event struct {
 	Spans           []*Span          `json:"spans,omitempty"`
 	TransactionInfo *TransactionInfo `json:"transaction_info,omitempty"`
 
+	// The fields below are only relevant for crons/check ins
+
+	CheckIn       *CheckIn       `json:"check_in,omitempty"`
+	MonitorConfig *MonitorConfig `json:"monitor_config,omitempty"`
+
 	// The fields below are not part of the final JSON payload.
 
 	sdkMetaData SDKMetaData
+}
+
+// SetException appends the unwrapped errors to the event's exception list.
+//
+// maxErrorDepth is the maximum depth of the error chain we will look
+// into while unwrapping the errors. If maxErrorDepth is -1, we will
+// unwrap all errors in the chain.
+func (e *Event) SetException(exception error, maxErrorDepth int) {
+	if exception == nil {
+		return
+	}
+
+	err := exception
+
+	for i := 0; err != nil && (i < maxErrorDepth || maxErrorDepth == -1); i++ {
+		// Add the current error to the exception slice with its details
+		e.Exception = append(e.Exception, Exception{
+			Value:      err.Error(),
+			Type:       reflect.TypeOf(err).String(),
+			Stacktrace: ExtractStacktrace(err),
+		})
+
+		// Attempt to unwrap the error using the standard library's Unwrap method.
+		// If errors.Unwrap returns nil, it means either there is no error to unwrap,
+		// or the error does not implement the Unwrap method.
+		unwrappedErr := errors.Unwrap(err)
+
+		if unwrappedErr != nil {
+			// The error was successfully unwrapped using the standard library's Unwrap method.
+			err = unwrappedErr
+			continue
+		}
+
+		cause, ok := err.(interface{ Cause() error })
+		if !ok {
+			// We cannot unwrap the error further.
+			break
+		}
+
+		// The error implements the Cause method, indicating it may have been wrapped
+		// using the github.com/pkg/errors package.
+		err = cause.Cause()
+	}
+
+	// Add a trace of the current stack to the most recent error in a chain if
+	// it doesn't have a stack trace yet.
+	// We only add to the most recent error to avoid duplication and because the
+	// current stack is most likely unrelated to errors deeper in the chain.
+	if e.Exception[0].Stacktrace == nil {
+		e.Exception[0].Stacktrace = NewStacktrace()
+	}
+
+	if len(e.Exception) <= 1 {
+		return
+	}
+
+	// event.Exception should be sorted such that the most recent error is last.
+	slices.Reverse(e.Exception)
+
+	for i := range e.Exception {
+		e.Exception[i].Mechanism = &Mechanism{
+			IsExceptionGroup: true,
+			ExceptionID:      i,
+			Type:             "generic",
+		}
+		if i == 0 {
+			continue
+		}
+		e.Exception[i].Mechanism.ParentID = Pointer(i - 1)
+	}
 }
 
 // TODO: Event.Contexts map[string]interface{} => map[string]EventContext,
@@ -286,6 +417,10 @@ func (e *Event) MarshalJSON() ([]byte, error) {
 	// and a few type tricks.
 	if e.Type == transactionType {
 		return e.transactionMarshalJSON()
+	}
+
+	if e.Type == checkInType {
+		return e.checkInMarshalJSON()
 	}
 	return e.defaultMarshalJSON()
 }
@@ -360,15 +495,37 @@ func (e *Event) transactionMarshalJSON() ([]byte, error) {
 	return json.Marshal(x)
 }
 
+func (e *Event) checkInMarshalJSON() ([]byte, error) {
+	checkIn := serializedCheckIn{
+		CheckInID:     string(e.CheckIn.ID),
+		MonitorSlug:   e.CheckIn.MonitorSlug,
+		Status:        e.CheckIn.Status,
+		Duration:      e.CheckIn.Duration.Seconds(),
+		Release:       e.Release,
+		Environment:   e.Environment,
+		MonitorConfig: nil,
+	}
+
+	if e.MonitorConfig != nil {
+		checkIn.MonitorConfig = &MonitorConfig{
+			Schedule:      e.MonitorConfig.Schedule,
+			CheckInMargin: e.MonitorConfig.CheckInMargin,
+			MaxRuntime:    e.MonitorConfig.MaxRuntime,
+			Timezone:      e.MonitorConfig.Timezone,
+		}
+	}
+
+	return json.Marshal(checkIn)
+}
+
 // NewEvent creates a new Event.
 func NewEvent() *Event {
-	event := Event{
+	return &Event{
 		Contexts: make(map[string]Context),
 		Extra:    make(map[string]interface{}),
 		Tags:     make(map[string]string),
 		Modules:  make(map[string]string),
 	}
-	return &event
 }
 
 // Thread specifies threads that were running at the time of an event.
