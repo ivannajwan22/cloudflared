@@ -155,7 +155,7 @@ github.com/klauspost/compress/flate
 # github.com/mattn/go-colorable v0.1.13
 ## explicit; go 1.15
 github.com/mattn/go-colorable
-# github.com/mattn/go-isatty v0.0.16
+# github.com/mattn/go-isatty v0.0.19
 ## explicit; go 1.15
 github.com/mattn/go-isatty
 # github.com/matttproud/golang_protobuf_extensions v1.0.4
@@ -238,8 +238,8 @@ github.com/quic-go/quic-go/internal/utils/ringbuffer
 github.com/quic-go/quic-go/internal/wire
 github.com/quic-go/quic-go/logging
 github.com/quic-go/quic-go/quicvarint
-# github.com/rs/zerolog v1.20.0
-## explicit
+# github.com/rs/zerolog v1.33.0
+## explicit; go 1.15
 github.com/rs/zerolog
 github.com/rs/zerolog/internal/cbor
 github.com/rs/zerolog/internal/json
