@@ -73,9 +73,10 @@ github.com/flynn/go-shlex
 # github.com/fortytw2/leaktest v1.3.0
 ## explicit
 github.com/fortytw2/leaktest
-# github.com/fsnotify/fsnotify v1.4.9
-## explicit; go 1.13
+# github.com/fsnotify/fsnotify v1.8.0
+## explicit; go 1.17
 github.com/fsnotify/fsnotify
+github.com/fsnotify/fsnotify/internal
 # github.com/getsentry/sentry-go v0.31.1
 ## explicit; go 1.21
 github.com/getsentry/sentry-go
