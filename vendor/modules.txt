@@ -76,8 +76,8 @@ github.com/fortytw2/leaktest
 # github.com/fsnotify/fsnotify v1.4.9
 ## explicit; go 1.13
 github.com/fsnotify/fsnotify
-# github.com/getsentry/sentry-go v0.16.0
-## explicit; go 1.19
+# github.com/getsentry/sentry-go v0.31.1
+## explicit; go 1.21
 github.com/getsentry/sentry-go
 github.com/getsentry/sentry-go/internal/debug
 github.com/getsentry/sentry-go/internal/otel/baggage
