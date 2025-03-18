@@ -13,7 +13,7 @@ require (
 	github.com/getsentry/sentry-go v0.16.0
 	github.com/go-chi/chi/v5 v5.0.8
 	github.com/go-chi/cors v1.2.1
-	github.com/go-jose/go-jose/v4 v4.0.1
+	github.com/go-jose/go-jose/v4 v4.0.5
 	github.com/gobwas/ws v1.2.1
 	github.com/google/gopacket v1.1.19
 	github.com/google/uuid v1.6.0
@@ -27,7 +27,7 @@ require (
 	github.com/prometheus/client_model v0.6.0
 	github.com/quic-go/quic-go v0.45.0
 	github.com/rs/zerolog v1.20.0
-	github.com/stretchr/testify v1.9.0
+	github.com/stretchr/testify v1.10.0
 	github.com/urfave/cli/v2 v2.3.0
 	go.opentelemetry.io/contrib/propagators v0.22.0
 	go.opentelemetry.io/otel v1.26.0
