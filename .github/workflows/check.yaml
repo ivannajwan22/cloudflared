@@ -1,8 +1,8 @@
-on: [push, pull_request, workflow_dispatch]
+on: [push, workflow_dispatch]
 name: Check
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - run: echo "Workflow berjalan!"
+    - run: echo "Hello, workflow berjalan!"
