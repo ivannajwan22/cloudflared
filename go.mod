@@ -6,7 +6,7 @@ toolchain go1.24.1
 
 require (
 	github.com/coredns/coredns v1.12.1
-	github.com/coreos/go-oidc/v3 v3.13.0
+	github.com/coreos/go-oidc/v3 v3.14.1
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/facebookgo/grace v0.0.0-20180706040059-75cf19382434
 	github.com/fortytw2/leaktest v1.3.0
