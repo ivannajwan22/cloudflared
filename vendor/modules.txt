@@ -165,7 +165,7 @@ github.com/mattn/go-isatty
 # github.com/matttproud/golang_protobuf_extensions v1.0.4
 ## explicit; go 1.9
 github.com/matttproud/golang_protobuf_extensions/pbutil
-# github.com/miekg/dns v1.1.64
+# github.com/miekg/dns v1.1.65
 ## explicit; go 1.22.0
 github.com/miekg/dns
 # github.com/mitchellh/go-homedir v1.1.0
