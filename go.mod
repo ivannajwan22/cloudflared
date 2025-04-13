@@ -1,7 +1,6 @@
 module github.com/cloudflare/cloudflared
 
 go 1.23.0
-
 toolchain go1.24.1
 
 require (
@@ -14,7 +13,7 @@ require (
 	github.com/getsentry/sentry-go v0.31.1
 	github.com/go-chi/chi/v5 v5.2.1
 	github.com/go-chi/cors v1.2.1
-	github.com/go-jose/go-jose/v4 v4.0.5
+	github.com/go-jose/go-jose/v4 v4.1.0
 	github.com/gobwas/ws v1.4.0
 	github.com/google/gopacket v1.1.19
 	github.com/google/uuid v1.6.0
