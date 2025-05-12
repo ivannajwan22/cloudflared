@@ -1,6 +1,7 @@
 module github.com/cloudflare/cloudflared
 
-go 1.23.0
+go 1.24
+
 toolchain go1.24.1
 
 require (
@@ -39,7 +40,7 @@ require (
 	go.uber.org/mock v0.5.2
 	golang.org/x/crypto v0.37.0
 	golang.org/x/net v0.39.0
-	golang.org/x/sync v0.13.0
+	golang.org/x/sync v0.14.0
 	golang.org/x/sys v0.33.0
 	golang.org/x/term v0.31.0
 	google.golang.org/protobuf v1.36.6
